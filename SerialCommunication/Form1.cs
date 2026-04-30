@@ -161,12 +161,12 @@ namespace SerialCommunication
             {
                 serialPortArduino.WriteLine("ping");
                 string response = serialPortArduino.ReadLine();
-
+                
                 if (response != null && response.Trim().Equals("pong", StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
-
+                
                 return false;
             }
             catch (TimeoutException)
@@ -214,45 +214,47 @@ namespace SerialCommunication
                     return;
                 }
 
-                // --- 1. Gewenste temperatuur (analoge pin 0) ---
-                serialPortArduino.WriteLine("A0"); // Stuur commando om A0 te lezen
-                string responseA0 = serialPortArduino.ReadLine().Trim();
-
-                // --- 2. Huidige temperatuur (analoge pin 1) ---
-                serialPortArduino.WriteLine("A1"); // Stuur commando om A1 te lezen
-                string responseA1 = serialPortArduino.ReadLine().Trim();
-
-                if (int.TryParse(responseA0, out int rawA0) && int.TryParse(responseA1, out int rawA1))
+                float desiredTemp = 0;
+                float currentTemp = 0;
+                
+                // Read desired temperature (pin 0: 5-45°C)
+                serialPortArduino.WriteLine("temp");
+                string response = serialPortArduino.ReadLine();
+                
+                if (response != null && response.StartsWith("temp:"))
                 {
-                    // --- Herschaal A0: 0..1023 -> 5..45 °C ---
-                    double slopeA0 = 40.0 / 1023.0; // Richtingscoëfficiënt
-                    double offsetA0 = 5.0;          // Offset
-                    double gewensteTemp = (rawA0 * slopeA0) + offsetA0;
-
-                    // --- Herschaal A1: 0..1023 -> 0..500 °C ---
-                    double slopeA1 = 500.0 / 1023.0; // Richtingscoëfficiënt
-                    double offsetA1 = 0.0;           // Offset
-                    double huidigeTemp = (rawA1 * slopeA1) + offsetA1;
-
-                    // Visualiseer afgerond op 1 cijfer met eenheid
-                    labelGewensteTemp.Text = gewensteTemp.ToString("0.0") + " °C";
-                    labelHuidigeTemp.Text = huidigeTemp.ToString("0.0") + " °C";
-
-                    // --- 3. Led aansturen (digitale pin 2) ---
-                    // Als huidig < gewenst: LED AAN, anders LED UIT
-                    if (huidigeTemp < gewensteTemp)
+                    string temperatureStr = response.Substring(5).Trim();
+                    if (float.TryParse(temperatureStr, out desiredTemp))
                     {
-                        serialPortArduino.WriteLine("D2_ON"); // Vertel Arduino om LED aan te zetten
-                    }
-                    else
-                    {
-                        serialPortArduino.WriteLine("D2_OFF"); // Vertel Arduino om LED uit te zetten
+                        labelGewensteTemp.Text = desiredTemp.ToString("F1") + " °C";
                     }
                 }
-            }
-            catch (TimeoutException)
-            {
-                // Arduino antwoordde niet op tijd, wacht op de volgende tick
+                
+                // Read current temperature (pin 1: 0-500°C)
+                serialPortArduino.WriteLine("currenttemp");
+                response = serialPortArduino.ReadLine();
+                
+                if (response != null && response.StartsWith("currenttemp:"))
+                {
+                    string temperatureStr = response.Substring(12).Trim();
+                    if (float.TryParse(temperatureStr, out currentTemp))
+                    {
+                        labelHuidigeTemp.Text = currentTemp.ToString("F1") + " °C";
+                    }
+                }
+                
+                // Control pin 2: LED on if current < desired, off otherwise
+                if (currentTemp < desiredTemp)
+                {
+                    serialPortArduino.WriteLine("set d2 high");
+                }
+                else
+                {
+                    serialPortArduino.WriteLine("set d2 low");
+                }
+                
+                // Read the response to clear the buffer
+                serialPortArduino.ReadLine();
             }
             catch (ObjectDisposedException)
             {
@@ -264,6 +266,7 @@ namespace SerialCommunication
             }
             catch (Exception ex)
             {
+                // Log or handle unexpected exceptions
                 labelStatus.Text = "Timer fout: " + ex.Message;
                 timerOefening5.Stop();
             }

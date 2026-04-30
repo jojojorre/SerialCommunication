@@ -16,6 +16,8 @@ void setup()
   sCmd.addCommand("set", onSet);
   sCmd.addCommand("toggle", onToggle);
   sCmd.addCommand("get", onGet);
+  sCmd.addCommand("temp", onGetTemp);
+  sCmd.addCommand("currenttemp", onGetCurrentTemp);
   sCmd.addCommand("ping", onPing);
   sCmd.addCommand("help", onHelp);
   sCmd.addCommand("debug", onDebug);
@@ -169,6 +171,22 @@ void onGet()
   else SerialPort.println(F("Error: invalid argument 1"));
 }
 
+void onGetTemp()
+{
+  int adcValue = analogReadDelay(A0, 50000);
+  float temperature = (adcValue / 1023.0) * 40.0 + 5.0;
+  SerialPort.print(F("temp: "));
+  SerialPort.println(temperature);
+}
+
+void onGetCurrentTemp()
+{
+  int adcValue = analogReadDelay(A1, 50000);
+  float temperature = (adcValue / 1023.0) * 500.0;
+  SerialPort.print(F("currenttemp: "));
+  SerialPort.println(temperature);
+}
+
 void onPing()
 {
   SerialPort.println(F("pong"));
@@ -185,6 +203,8 @@ void onHelp()
   SerialPort.println(F("\ttoggle d[2..4]"));
   SerialPort.println(F("\tget d[2..7]"));
   SerialPort.println(F("\tget a[0..5]"));
+  SerialPort.println(F("\ttemp"));
+  SerialPort.println(F("\tcurrenttemp"));
   SerialPort.println(F("\tping"));
   SerialPort.println(F("\tdebug"));  
   SerialPort.println(F("\thelp"));  
