@@ -15,11 +15,13 @@ namespace SerialCommunication
     public partial class Form1 : Form
     {
         private SerialPort serialPortArduino;
+        private Timer timerOefening5;
 
         public Form1()
         {
             InitializeComponent();
             InitializeSerialPort();
+            InitializeTimer();
         }
 
         private void InitializeSerialPort()
@@ -27,6 +29,13 @@ namespace SerialCommunication
             serialPortArduino = new SerialPort();
             serialPortArduino.ReadTimeout = 1000;
             serialPortArduino.WriteTimeout = 1000;
+        }
+
+        private void InitializeTimer()
+        {
+            timerOefening5 = new Timer();
+            timerOefening5.Interval = 1000;
+            timerOefening5.Tick += TimerOefening5_Tick;
         }
 
         private void Form1_Load(object sender, EventArgs e)
@@ -39,9 +48,24 @@ namespace SerialCommunication
                 if (comboBoxPoort.Items.Count > 0) comboBoxPoort.SelectedIndex = 0;
 
                 comboBoxBaudrate.SelectedIndex = comboBoxBaudrate.Items.IndexOf("115200");
+
+                // Register TabControl SelectionChanged event
+                tabControl.SelectedIndexChanged += TabControl_SelectedIndexChanged;
             }
             catch (Exception)
             { }
+        }
+
+        private void TabControl_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (tabControl.SelectedTab == tabPageOefening5)
+            {
+                timerOefening5.Start();
+            }
+            else
+            {
+                timerOefening5.Stop();
+            }
         }
 
         private void cboPoort_DropDown(object sender, EventArgs e)
@@ -137,12 +161,12 @@ namespace SerialCommunication
             {
                 serialPortArduino.WriteLine("ping");
                 string response = serialPortArduino.ReadLine();
-                
+
                 if (response != null && response.Trim().Equals("pong", StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
-                
+
                 return false;
             }
             catch (TimeoutException)
@@ -177,6 +201,71 @@ namespace SerialCommunication
                 radioButtonVerbonden.Checked = false;
                 buttonConnect.Text = "Connect";
                 labelStatus.Text = "Verbroken";
+            }
+        }
+
+        private void TimerOefening5_Tick(object sender, EventArgs e)
+        {
+            try
+            {
+                if (!serialPortArduino.IsOpen)
+                {
+                    timerOefening5.Stop();
+                    return;
+                }
+
+                // --- 1. Gewenste temperatuur (analoge pin 0) ---
+                serialPortArduino.WriteLine("A0"); // Stuur commando om A0 te lezen
+                string responseA0 = serialPortArduino.ReadLine().Trim();
+
+                // --- 2. Huidige temperatuur (analoge pin 1) ---
+                serialPortArduino.WriteLine("A1"); // Stuur commando om A1 te lezen
+                string responseA1 = serialPortArduino.ReadLine().Trim();
+
+                if (int.TryParse(responseA0, out int rawA0) && int.TryParse(responseA1, out int rawA1))
+                {
+                    // --- Herschaal A0: 0..1023 -> 5..45 °C ---
+                    double slopeA0 = 40.0 / 1023.0; // Richtingscoëfficiënt
+                    double offsetA0 = 5.0;          // Offset
+                    double gewensteTemp = (rawA0 * slopeA0) + offsetA0;
+
+                    // --- Herschaal A1: 0..1023 -> 0..500 °C ---
+                    double slopeA1 = 500.0 / 1023.0; // Richtingscoëfficiënt
+                    double offsetA1 = 0.0;           // Offset
+                    double huidigeTemp = (rawA1 * slopeA1) + offsetA1;
+
+                    // Visualiseer afgerond op 1 cijfer met eenheid
+                    labelGewensteTemp.Text = gewensteTemp.ToString("0.0") + " °C";
+                    labelHuidigeTemp.Text = huidigeTemp.ToString("0.0") + " °C";
+
+                    // --- 3. Led aansturen (digitale pin 2) ---
+                    // Als huidig < gewenst: LED AAN, anders LED UIT
+                    if (huidigeTemp < gewensteTemp)
+                    {
+                        serialPortArduino.WriteLine("D2_ON"); // Vertel Arduino om LED aan te zetten
+                    }
+                    else
+                    {
+                        serialPortArduino.WriteLine("D2_OFF"); // Vertel Arduino om LED uit te zetten
+                    }
+                }
+            }
+            catch (TimeoutException)
+            {
+                // Arduino antwoordde niet op tijd, wacht op de volgende tick
+            }
+            catch (ObjectDisposedException)
+            {
+                timerOefening5.Stop();
+            }
+            catch (InvalidOperationException)
+            {
+                timerOefening5.Stop();
+            }
+            catch (Exception ex)
+            {
+                labelStatus.Text = "Timer fout: " + ex.Message;
+                timerOefening5.Stop();
             }
         }
     }
