@@ -17,6 +17,18 @@ namespace SerialCommunication
         private SerialPort serialPortArduino;
         private Timer timerOefening5;
 
+        // Temperature scaling constants (must match Arduino values)
+        // Gewenste temperatuur (Potentiometer A0): 5-45°C
+        private const float TEMP_DESIRED_OFFSET = 5.0f;
+        private const float TEMP_DESIRED_SLOPE = 40.0f;
+
+        // Huidige temperatuur (LM35 sensor A1): 0-500°C
+        private const float TEMP_CURRENT_OFFSET = 0.0f;
+        private const float TEMP_CURRENT_SLOPE = 500.0f;
+
+        // ADC resolution
+        private const float ADC_MAX = 1023.0f;
+
         public Form1()
         {
             InitializeComponent();
@@ -217,7 +229,9 @@ namespace SerialCommunication
                 float desiredTemp = 0;
                 float currentTemp = 0;
                 
-                // Read desired temperature (pin 0: 5-45°C)
+                // Read desired temperature from potentiometer (A0: 5-45°C)
+                // Linear scaling: 0-1023 ADC → 5-45°C
+                // Formula: temp = (adc / 1023.0) * 40.0 + 5.0
                 serialPortArduino.WriteLine("temp");
                 string response = serialPortArduino.ReadLine();
                 
@@ -230,7 +244,9 @@ namespace SerialCommunication
                     }
                 }
                 
-                // Read current temperature (pin 1: 0-500°C)
+                // Read current temperature from LM35 sensor (A1: 0-500°C)
+                // Linear scaling: 0-1023 ADC → 0-500°C
+                // Formula: temp = (adc / 1023.0) * 500.0
                 serialPortArduino.WriteLine("currenttemp");
                 response = serialPortArduino.ReadLine();
                 
@@ -243,7 +259,7 @@ namespace SerialCommunication
                     }
                 }
                 
-                // Control pin 2: LED on if current < desired, off otherwise
+                // Control LED on pin 2: ON if current < desired, OFF otherwise
                 if (currentTemp < desiredTemp)
                 {
                     serialPortArduino.WriteLine("set d2 high");

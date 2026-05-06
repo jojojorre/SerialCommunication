@@ -5,6 +5,18 @@
 #define SerialPort Serial
 #define Baudrate 115200
 
+// Temperature scaling constants for linear conversion
+// Gewenste temperatuur (Potentiometer op A0): 5-45°C
+#define TEMP_DESIRED_OFFSET 5.0
+#define TEMP_DESIRED_SLOPE 40.0
+
+// Huidige temperatuur (LM35 sensor op A1): 0-500°C
+#define TEMP_CURRENT_OFFSET 0.0
+#define TEMP_CURRENT_SLOPE 500.0
+
+// ADC resolution (0-1023)
+#define ADC_MAX 1023.0
+
 int numberOfPings;
 SerialCommand sCmd(SerialPort);
 
@@ -173,16 +185,24 @@ void onGet()
 
 void onGetTemp()
 {
+  // Read desired temperature from potentiometer on A0
+  // Linear scaling: 0-1023 ADC → 5-45°C
+  // Formula: temp = (adc_value / 1023.0) * 40.0 + 5.0
+  // See FAQ: "Analoge waardes herschalen"
   int adcValue = analogReadDelay(A0, 50000);
-  float temperature = (adcValue / 1023.0) * 40.0 + 5.0;
+  float temperature = (adcValue / ADC_MAX) * TEMP_DESIRED_SLOPE + TEMP_DESIRED_OFFSET;
   SerialPort.print(F("temp: "));
   SerialPort.println(temperature);
 }
 
 void onGetCurrentTemp()
 {
+  // Read current temperature from LM35 sensor on A1
+  // Linear scaling: 0-1023 ADC → 0-500°C
+  // Formula: temp = (adc_value / 1023.0) * 500.0
+  // See FAQ: "Analoge waardes herschalen - deel 2"
   int adcValue = analogReadDelay(A1, 50000);
-  float temperature = (adcValue / 1023.0) * 500.0;
+  float temperature = (adcValue / ADC_MAX) * TEMP_CURRENT_SLOPE + TEMP_CURRENT_OFFSET;
   SerialPort.print(F("currenttemp: "));
   SerialPort.println(temperature);
 }
