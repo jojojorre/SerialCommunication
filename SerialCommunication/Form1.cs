@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Windows.Forms.VisualStyles;
 
 namespace SerialCommunication
 {
@@ -17,23 +17,18 @@ namespace SerialCommunication
         private SerialPort serialPortArduino;
         private Timer timerOefening5;
 
-        // Temperature scaling constants (must match Arduino values)
-        // Gewenste temperatuur (Potentiometer A0): 5-45°C
-        private const float TEMP_DESIRED_OFFSET = 5.0f;
-        private const float TEMP_DESIRED_SLOPE = 40.0f;
-
-        // Huidige temperatuur (LM35 sensor A1): 0-500°C
-        private const float TEMP_CURRENT_OFFSET = 0.0f;
-        private const float TEMP_CURRENT_SLOPE = 500.0f;
-
-        // ADC resolution
-        private const float ADC_MAX = 1023.0f;
+        // Veilige variabelen voor temperatuur
+        private float currentDesiredTemp = 0f;
+        private float currentActualTemp = 0f;
 
         public Form1()
         {
             InitializeComponent();
             InitializeSerialPort();
             InitializeTimer();
+
+            // Zorg ervoor dat de poort netjes sluit als de applicatie stopt
+            this.FormClosing += Form1_FormClosing;
         }
 
         private void InitializeSerialPort()
@@ -46,7 +41,7 @@ namespace SerialCommunication
         private void InitializeTimer()
         {
             timerOefening5 = new Timer();
-            timerOefening5.Interval = 1000;
+            timerOefening5.Interval = 1000; // 1 seconde
             timerOefening5.Tick += TimerOefening5_Tick;
         }
 
@@ -59,18 +54,24 @@ namespace SerialCommunication
                 comboBoxPoort.Items.AddRange(portNames);
                 if (comboBoxPoort.Items.Count > 0) comboBoxPoort.SelectedIndex = 0;
 
-                comboBoxBaudrate.SelectedIndex = comboBoxBaudrate.Items.IndexOf("115200");
+                if (comboBoxBaudrate.Items.Count > 0)
+                {
+                    int index = comboBoxBaudrate.Items.IndexOf("115200");
+                    comboBoxBaudrate.SelectedIndex = index >= 0 ? index : 0;
+                }
 
-                // Register TabControl SelectionChanged event
+                labelStatus.Text = "Niet verbonden";
+                labelGewensteTemp.Text = "-";
+                labelHuidigeTemp.Text = "-";
+
                 tabControl.SelectedIndexChanged += TabControl_SelectedIndexChanged;
             }
-            catch (Exception)
-            { }
+            catch (Exception) { }
         }
 
         private void TabControl_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (tabControl.SelectedTab == tabPageOefening5)
+            if (tabControl.SelectedTab == tabPageOefening5 && serialPortArduino.IsOpen)
             {
                 timerOefening5.Start();
             }
@@ -90,12 +91,16 @@ namespace SerialCommunication
                 comboBoxPoort.Items.Clear();
                 comboBoxPoort.Items.AddRange(portNames);
 
-                comboBoxPoort.SelectedIndex = comboBoxPoort.Items.IndexOf(selected);
+                if (selected != null && comboBoxPoort.Items.Contains(selected))
+                {
+                    comboBoxPoort.SelectedItem = selected;
+                }
+                else if (comboBoxPoort.Items.Count > 0)
+                {
+                    comboBoxPoort.SelectedIndex = 0;
+                }
             }
-            catch (Exception)
-            {
-                if (comboBoxPoort.Items.Count > 0) comboBoxPoort.SelectedIndex = 0;
-            }
+            catch (Exception) { }
         }
 
         private void buttonConnect_Click(object sender, EventArgs e)
@@ -117,44 +122,43 @@ namespace SerialCommunication
                 // Configureer alle port properties
                 serialPortArduino.PortName = comboBoxPoort.SelectedItem.ToString();
                 serialPortArduino.BaudRate = int.Parse(comboBoxBaudrate.SelectedItem.ToString());
-                serialPortArduino.DataBits = (int)numericUpDownDatabits.Value;
+
+                if (numericUpDownDatabits != null) serialPortArduino.DataBits = (int)numericUpDownDatabits.Value;
 
                 // Stopbits instellen
-                if (radioButtonStopbitsNone.Checked) serialPortArduino.StopBits = StopBits.None;
-                else if (radioButtonStopbitsOne.Checked) serialPortArduino.StopBits = StopBits.One;
-                else if (radioButtonStopbitsOnePointFive.Checked) serialPortArduino.StopBits = StopBits.OnePointFive;
-                else if (radioButtonStopbitsTwo.Checked) serialPortArduino.StopBits = StopBits.Two;
+                if (radioButtonStopbitsNone != null && radioButtonStopbitsNone.Checked) serialPortArduino.StopBits = StopBits.None;
+                else if (radioButtonStopbitsOne != null && radioButtonStopbitsOne.Checked) serialPortArduino.StopBits = StopBits.One;
+                else if (radioButtonStopbitsOnePointFive != null && radioButtonStopbitsOnePointFive.Checked) serialPortArduino.StopBits = StopBits.OnePointFive;
+                else if (radioButtonStopbitsTwo != null && radioButtonStopbitsTwo.Checked) serialPortArduino.StopBits = StopBits.Two;
 
                 // Parity instellen
-                if (radioButtonParityNone.Checked) serialPortArduino.Parity = Parity.None;
-                else if (radioButtonParityOdd.Checked) serialPortArduino.Parity = Parity.Odd;
-                else if (radioButtonParityEven.Checked) serialPortArduino.Parity = Parity.Even;
-                else if (radioButtonParityMark.Checked) serialPortArduino.Parity = Parity.Mark;
-                else if (radioButtonParitySpace.Checked) serialPortArduino.Parity = Parity.Space;
+                if (radioButtonParityNone != null && radioButtonParityNone.Checked) serialPortArduino.Parity = Parity.None;
+                else if (radioButtonParityOdd != null && radioButtonParityOdd.Checked) serialPortArduino.Parity = Parity.Odd;
+                else if (radioButtonParityEven != null && radioButtonParityEven.Checked) serialPortArduino.Parity = Parity.Even;
+                else if (radioButtonParityMark != null && radioButtonParityMark.Checked) serialPortArduino.Parity = Parity.Mark;
+                else if (radioButtonParitySpace != null && radioButtonParitySpace.Checked) serialPortArduino.Parity = Parity.Space;
 
                 // Handshake instellen
-                if (radioButtonHandshakeNone.Checked) serialPortArduino.Handshake = Handshake.None;
-                else if (radioButtonHandshakeRTS.Checked) serialPortArduino.Handshake = Handshake.RequestToSend;
-                else if (radioButtonHandshakeRTSXonXoff.Checked) serialPortArduino.Handshake = Handshake.RequestToSendXOnXOff;
-                else if (radioButtonHandshakeXonXoff.Checked) serialPortArduino.Handshake = Handshake.XOnXOff;
+                if (radioButtonHandshakeNone != null && radioButtonHandshakeNone.Checked) serialPortArduino.Handshake = Handshake.None;
+                else if (radioButtonHandshakeRTS != null && radioButtonHandshakeRTS.Checked) serialPortArduino.Handshake = Handshake.RequestToSend;
+                else if (radioButtonHandshakeRTSXonXoff != null && radioButtonHandshakeRTSXonXoff.Checked) serialPortArduino.Handshake = Handshake.RequestToSendXOnXOff;
+                else if (radioButtonHandshakeXonXoff != null && radioButtonHandshakeXonXoff.Checked) serialPortArduino.Handshake = Handshake.XOnXOff;
 
                 // RTS en DTR instellen
-                serialPortArduino.RtsEnable = checkBoxRtsEnable.Checked;
-                serialPortArduino.DtrEnable = checkBoxDtrEnable.Checked;
+                if (checkBoxRtsEnable != null) serialPortArduino.RtsEnable = checkBoxRtsEnable.Checked;
+                if (checkBoxDtrEnable != null) serialPortArduino.DtrEnable = checkBoxDtrEnable.Checked;
+                else serialPortArduino.DtrEnable = true; // Zorg dat Arduino reset werkt
 
                 // Open de verbinding
                 serialPortArduino.Open();
 
-                // Verzend ping en valideer pong
                 if (VerifyPingPong())
                 {
-                    // Verbinding succesvol - update UI
                     UpdateUIOnConnect();
                     labelStatus.Text = "Verbonden met Arduino op " + comboBoxPoort.SelectedItem;
                 }
                 else
                 {
-                    // Ping/pong mislukt - sluit verbinding
                     serialPortArduino.Close();
                     MessageBox.Show("Arduino antwoordde niet correct op ping.", "Verbindingsfout");
                     labelStatus.Text = "Verbindingsfout: Geen pong antwoord";
@@ -171,21 +175,12 @@ namespace SerialCommunication
         {
             try
             {
+                serialPortArduino.DiscardInBuffer();
                 serialPortArduino.WriteLine("ping");
                 string response = serialPortArduino.ReadLine();
-                
-                if (response != null && response.Trim().Equals("pong", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-                
-                return false;
+                return response != null && response.Trim().Equals("pong", StringComparison.OrdinalIgnoreCase);
             }
-            catch (TimeoutException)
-            {
-                return false;
-            }
-            catch (Exception)
+            catch
             {
                 return false;
             }
@@ -195,13 +190,22 @@ namespace SerialCommunication
         {
             radioButtonVerbonden.Checked = true;
             buttonConnect.Text = "Disconnect";
+
+            if (tabControl.SelectedTab == tabPageOefening5)
+            {
+                timerOefening5.Start();
+            }
         }
 
         private void DisconnectFromArduino()
         {
             try
             {
-                serialPortArduino.Close();
+                timerOefening5.Stop();
+                if (serialPortArduino.IsOpen)
+                {
+                    serialPortArduino.Close();
+                }
             }
             catch (Exception ex)
             {
@@ -209,10 +213,11 @@ namespace SerialCommunication
             }
             finally
             {
-                // Reset UI
                 radioButtonVerbonden.Checked = false;
                 buttonConnect.Text = "Connect";
-                labelStatus.Text = "Verbroken";
+                labelStatus.Text = "Niet verbonden";
+                labelGewensteTemp.Text = "-";
+                labelHuidigeTemp.Text = "-";
             }
         }
 
@@ -222,69 +227,76 @@ namespace SerialCommunication
             {
                 if (!serialPortArduino.IsOpen)
                 {
-                    timerOefening5.Stop();
+                    DisconnectFromArduino();
                     return;
                 }
 
-                float desiredTemp = 0;
-                float currentTemp = 0;
-                
-                // Read desired temperature from potentiometer (A0: 5-45°C)
-                // Linear scaling: 0-1023 ADC → 5-45°C
-                // Formula: temp = (adc / 1023.0) * 40.0 + 5.0
+                // 1. Ping check
+                serialPortArduino.DiscardInBuffer();
+                serialPortArduino.WriteLine("ping");
+                string pingResp = serialPortArduino.ReadLine().Trim().ToLower();
+
+                if (pingResp != "pong") return;
+
+                // 2. Haal gewenste temperatuur (Potentiometer)
                 serialPortArduino.WriteLine("temp");
-                string response = serialPortArduino.ReadLine();
-                
-                if (response != null && response.StartsWith("temp:"))
+                string tempRaw = serialPortArduino.ReadLine().Trim();
+                if (tempRaw.Contains(":"))
                 {
-                    string temperatureStr = response.Substring(5).Trim();
-                    if (float.TryParse(temperatureStr, out desiredTemp))
+                    // VERBETERING: Vervang punt door komma voor correcte Nederlandse Windows formattering
+                    string tempStr = tempRaw.Split(':')[1].Trim().Replace('.', ',');
+
+                    if (float.TryParse(tempStr, out currentDesiredTemp))
                     {
-                        labelGewensteTemp.Text = desiredTemp.ToString("F1") + " °C";
+                        labelGewensteTemp.Text = currentDesiredTemp.ToString("F1") + " °C";
                     }
                 }
-                
-                // Read current temperature from LM35 sensor (A1: 0-500°C)
-                // Linear scaling: 0-1023 ADC → 0-500°C
-                // Formula: temp = (adc / 1023.0) * 500.0
+
+                // 3. Haal huidige temperatuur (LM35)
                 serialPortArduino.WriteLine("currenttemp");
-                response = serialPortArduino.ReadLine();
-                
-                if (response != null && response.StartsWith("currenttemp:"))
+                string currentRaw = serialPortArduino.ReadLine().Trim();
+                if (currentRaw.Contains(":"))
                 {
-                    string temperatureStr = response.Substring(12).Trim();
-                    if (float.TryParse(temperatureStr, out currentTemp))
+                    // VERBETERING: Vervang punt door komma voor correcte Nederlandse Windows formattering
+                    string tempStr = currentRaw.Split(':')[1].Trim().Replace('.', ',');
+
+                    if (float.TryParse(tempStr, out currentActualTemp))
                     {
-                        labelHuidigeTemp.Text = currentTemp.ToString("F1") + " °C";
+                        labelHuidigeTemp.Text = currentActualTemp.ToString("F1") + " °C";
                     }
                 }
-                
-                // Control LED on pin 2: ON if current < desired, OFF otherwise
-                if (currentTemp < desiredTemp)
+
+                // 4. LED control (Verwarming simulatie)
+                if (currentActualTemp < currentDesiredTemp)
                 {
                     serialPortArduino.WriteLine("set d2 high");
+                    labelStatus.Text = "Verwarming AAN (LED D2 High)";
                 }
                 else
                 {
                     serialPortArduino.WriteLine("set d2 low");
+                    labelStatus.Text = "Verwarming UIT (LED D2 Low)";
                 }
-                
-                // Read the response to clear the buffer
-                serialPortArduino.ReadLine();
+
+                try { serialPortArduino.ReadLine(); } catch { }
             }
-            catch (ObjectDisposedException)
+            catch (TimeoutException)
             {
-                timerOefening5.Stop();
-            }
-            catch (InvalidOperationException)
-            {
-                timerOefening5.Stop();
+                labelStatus.Text = "Time-out bij communicatie.";
             }
             catch (Exception ex)
             {
-                // Log or handle unexpected exceptions
-                labelStatus.Text = "Timer fout: " + ex.Message;
+                labelStatus.Text = "ERROR: " + ex.Message;
+            }
+        }
+
+        // Zorgt ervoor dat de poort sluit als je het venster via het kruisje sluit
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (serialPortArduino != null && serialPortArduino.IsOpen)
+            {
                 timerOefening5.Stop();
+                serialPortArduino.Close();
             }
         }
     }
